@@ -32,23 +32,29 @@ struct IslandView: View {
                 Image(systemName: "timer")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.orange)
-
                 Text(model.timer.formatted)
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
             } else {
                 Image(systemName: volumeSymbol)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.82))
-
                 Text("\(model.audio.masterVolumePercent)%")
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-
                 VolumeWaveform(level: model.audio.masterVolume)
                     .frame(width: 54, height: 18)
             }
 
             Spacer(minLength: 6)
+
+            if !model.audioProcesses.apps.isEmpty {
+                HStack(spacing: 4) {
+                    Circle().fill(.green).frame(width: 6, height: 6)
+                    Text("\(model.audioProcesses.apps.count)")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.72))
+            }
 
             HStack(spacing: 5) {
                 Image(systemName: model.battery.symbolName)
@@ -65,7 +71,6 @@ struct IslandView: View {
         VStack(spacing: 12) {
             header
             tabBar
-
             Group {
                 switch state.selectedTab {
                 case .home: homeTab
@@ -93,28 +98,26 @@ struct IslandView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Kira Island")
                     .font(.system(size: 15, weight: .semibold))
-                Text("Native macOS control surface")
+                Text(model.audioProcesses.apps.isEmpty ? "No active audio apps" : "\(model.audioProcesses.apps.count) app(s) producing audio")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.5))
             }
 
             Spacer()
 
-            HStack(spacing: 8) {
-                VolumeWaveform(level: model.audio.masterVolume)
-                    .frame(width: 48, height: 18)
+            VolumeWaveform(level: model.audio.masterVolume)
+                .frame(width: 48, height: 18)
 
-                Text("\(model.audio.masterVolumePercent)%")
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.72))
-            }
+            Text("\(model.audio.masterVolumePercent)%")
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.72))
 
-            HStack(spacing: 7) {
+            HStack(spacing: 5) {
                 Image(systemName: model.battery.symbolName)
                 Text("\(model.battery.percentage)%")
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(.white.opacity(0.68))
 
             Button(action: onToggle) {
@@ -141,7 +144,10 @@ struct IslandView: View {
     private func tabButton(_ tab: IslandState.Tab, icon: String, title: String) -> some View {
         Button {
             state.selectedTab = tab
-            if tab == .audio { model.audio.refresh() }
+            if tab == .audio {
+                model.audio.refresh()
+                model.audioProcesses.refresh()
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
@@ -161,62 +167,53 @@ struct IslandView: View {
 
     private var homeTab: some View {
         HStack(spacing: 10) {
-            statusCard(
-                icon: model.battery.symbolName,
-                title: "Battery",
-                value: "\(model.battery.percentage)%",
-                detail: model.battery.isCharging ? "Charging" : (model.battery.isPluggedIn ? "Power adapter" : "On battery")
-            )
-
-            statusCard(
-                icon: volumeSymbol,
-                title: "Volume",
-                value: "\(model.audio.masterVolumePercent)%",
-                detail: selectedOutputName
-            )
-
-            statusCard(
-                icon: "doc.on.clipboard",
-                title: "Clipboard",
-                value: "\(model.clipboard.entries.count)",
-                detail: "Recent text items"
-            )
+            statusCard(icon: model.battery.symbolName,
+                       title: "Battery",
+                       value: "\(model.battery.percentage)%",
+                       detail: model.battery.isCharging ? "Charging" : (model.battery.isPluggedIn ? "Power adapter" : "On battery"))
+            statusCard(icon: volumeSymbol,
+                       title: "Volume",
+                       value: "\(model.audio.masterVolumePercent)%",
+                       detail: selectedOutputName)
+            statusCard(icon: "waveform",
+                       title: "Audio apps",
+                       value: "\(model.audioProcesses.apps.count)",
+                       detail: model.audioProcesses.apps.first?.name ?? "Nothing playing")
         }
     }
 
     private var audioTab: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Output device")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.6))
-                Spacer()
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.fill")
+                    .font(.system(size: 10))
+                Slider(
+                    value: Binding(
+                        get: { Double(model.audio.masterVolume) },
+                        set: { model.audio.setVolume(Float($0)) }
+                    ),
+                    in: 0...1
+                )
                 Text("\(model.audio.masterVolumePercent)%")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.7))
-                Button("Refresh") { model.audio.refresh() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .frame(width: 34, alignment: .trailing)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 7) {
                     ForEach(model.audio.outputs) { device in
                         Button {
                             model.audio.select(device)
                         } label: {
-                            HStack(spacing: 7) {
+                            HStack(spacing: 6) {
                                 Image(systemName: device.symbolName)
-                                Text(device.name)
-                                    .lineLimit(1)
+                                Text(device.name).lineLimit(1)
                             }
-                            .font(.system(size: 10.5, weight: .medium))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 8)
+                            .font(.system(size: 9.5, weight: .medium))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
                             .background(
-                                model.audio.selectedID == device.id ? .white.opacity(0.16) : .white.opacity(0.07),
+                                model.audio.selectedID == device.id ? .white.opacity(0.16) : .white.opacity(0.06),
                                 in: Capsule()
                             )
                         }
@@ -225,26 +222,7 @@ struct IslandView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "speaker.fill")
-                    Slider(
-                        value: Binding(
-                            get: { Double(model.audio.masterVolume) },
-                            set: { model.audio.setVolume(Float($0)) }
-                        ),
-                        in: 0...1
-                    )
-                    Image(systemName: "speaker.wave.3.fill")
-                }
-                .font(.system(size: 11))
-
-                if !model.audio.canControlVolume {
-                    Text("This output does not expose hardware volume control.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-            }
+            AudioMixerSection(processes: model.audioProcesses)
         }
     }
 
@@ -372,19 +350,16 @@ struct IslandView: View {
 
 private struct VolumeWaveform: View {
     let level: Float
-
     private let bars = 9
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.08)) { timeline in
             let phase = timeline.date.timeIntervalSinceReferenceDate * 5.2
-
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<bars, id: \.self) { index in
                     let normalizedLevel = max(0.08, Double(level))
                     let wave = abs(sin(phase + Double(index) * 0.72))
                     let height = 3.0 + (4.0 + wave * 10.0) * normalizedLevel
-
                     Capsule()
                         .fill(.white.opacity(level > 0.001 ? 0.82 : 0.24))
                         .frame(width: 2.6, height: height)
