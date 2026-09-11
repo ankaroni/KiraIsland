@@ -28,12 +28,13 @@ final class AppModel: ObservableObject {
     func start() {
         battery.start()
         clipboard.start()
-        audio.refresh()
+        audio.startMonitoring()
     }
 
     func stop() {
         battery.stop()
         clipboard.stop()
         timer.stop()
+        audio.stopMonitoring()
     }
 }
