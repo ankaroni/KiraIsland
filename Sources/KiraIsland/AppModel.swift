@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     let timer = IslandTimerManager()
     let audio = AudioDeviceManager()
     let audioProcesses = AudioProcessMonitor()
+    let perAppAudio = PerAppAudioManager()
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -27,6 +28,9 @@ final class AppModel: ObservableObject {
         audioProcesses.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        perAppAudio.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     func start() {
@@ -34,13 +38,15 @@ final class AppModel: ObservableObject {
         clipboard.start()
         audio.startMonitoring()
         audioProcesses.start()
+        perAppAudio.start(monitor: audioProcesses)
     }
 
     func stop() {
         battery.stop()
         clipboard.stop()
         timer.stop()
-        audio.stopMonitoring()
+        perAppAudio.stop()
         audioProcesses.stop()
+        audio.stopMonitoring()
     }
 }
