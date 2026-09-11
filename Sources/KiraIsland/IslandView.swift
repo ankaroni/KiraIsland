@@ -27,32 +27,38 @@ struct IslandView: View {
     }
 
     private var compactContent: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(model.timer.isRunning ? .orange : .green)
-                .frame(width: 8, height: 8)
-
+        HStack(spacing: 9) {
             if model.timer.remainingSeconds > 0 {
                 Image(systemName: "timer")
                     .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+
                 Text(model.timer.formatted)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
             } else {
-                Text("Kira Island")
-                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: volumeSymbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.82))
+
+                Text("\(model.audio.masterVolumePercent)%")
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+
+                VolumeWaveform(level: model.audio.masterVolume)
+                    .frame(width: 54, height: 18)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
             HStack(spacing: 5) {
                 Image(systemName: model.battery.symbolName)
                 Text("\(model.battery.percentage)%")
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.72))
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.68))
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 15)
     }
 
     private var expandedContent: some View {
@@ -93,6 +99,16 @@ struct IslandView: View {
             }
 
             Spacer()
+
+            HStack(spacing: 8) {
+                VolumeWaveform(level: model.audio.masterVolume)
+                    .frame(width: 48, height: 18)
+
+                Text("\(model.audio.masterVolumePercent)%")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.72))
+            }
 
             HStack(spacing: 7) {
                 Image(systemName: model.battery.symbolName)
@@ -153,10 +169,10 @@ struct IslandView: View {
             )
 
             statusCard(
-                icon: "speaker.wave.2.fill",
-                title: "Output",
-                value: selectedOutputName,
-                detail: "Core Audio"
+                icon: volumeSymbol,
+                title: "Volume",
+                value: "\(model.audio.masterVolumePercent)%",
+                detail: selectedOutputName
             )
 
             statusCard(
@@ -175,6 +191,10 @@ struct IslandView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.6))
                 Spacer()
+                Text("\(model.audio.masterVolumePercent)%")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
                 Button("Refresh") { model.audio.refresh() }
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .medium))
@@ -338,5 +358,40 @@ struct IslandView: View {
 
     private var selectedOutputName: String {
         model.audio.outputs.first(where: { $0.id == model.audio.selectedID })?.name ?? "Unknown"
+    }
+
+    private var volumeSymbol: String {
+        switch model.audio.masterVolume {
+        case ...0.001: return "speaker.slash.fill"
+        case ..<0.34: return "speaker.wave.1.fill"
+        case ..<0.67: return "speaker.wave.2.fill"
+        default: return "speaker.wave.3.fill"
+        }
+    }
+}
+
+private struct VolumeWaveform: View {
+    let level: Float
+
+    private let bars = 9
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.08)) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate * 5.2
+
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(0..<bars, id: \.self) { index in
+                    let normalizedLevel = max(0.08, Double(level))
+                    let wave = abs(sin(phase + Double(index) * 0.72))
+                    let height = 3.0 + (4.0 + wave * 10.0) * normalizedLevel
+
+                    Capsule()
+                        .fill(.white.opacity(level > 0.001 ? 0.82 : 0.24))
+                        .frame(width: 2.6, height: height)
+                }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .accessibilityLabel("System volume \(Int((level * 100).rounded())) percent")
     }
 }
