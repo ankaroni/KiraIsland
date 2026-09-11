@@ -4,10 +4,6 @@ import QuartzCore
 
 @MainActor
 final class IslandWindowController {
-    // The panel starts at the physical top edge of the display and grows down.
-    // This makes the black island visually merge with the MacBook camera notch
-    // instead of floating below the menu bar.
-    private let compactSize = NSSize(width: 260, height: 52)
     private let expandedSize = NSSize(width: 500, height: 380)
 
     private let state = IslandState()
@@ -23,7 +19,7 @@ final class IslandWindowController {
         }
 
         model.start()
-        let frame = frame(for: compactSize, on: screen)
+        let frame = frame(for: compactSize(on: screen), on: screen)
         let panel = IslandPanel(contentRect: frame)
         panel.contentView = NSHostingView(
             rootView: IslandView(
@@ -48,30 +44,33 @@ final class IslandWindowController {
             ?? NSScreen.screens.first
     }
 
-    private func notchCenterX(on screen: NSScreen) -> CGFloat {
-        // On a notched display macOS exposes the two usable menu-bar regions.
-        // Their gap is the physical camera housing. Use its midpoint when
-        // available; otherwise the display midpoint is the correct fallback.
-        if let left = screen.auxiliaryTopLeftArea,
-           let right = screen.auxiliaryTopRightArea,
-           left.width > 0,
-           right.width > 0,
-           right.minX > left.maxX {
-            return (left.maxX + right.minX) / 2
+    // auxiliaryTopLeftArea / auxiliaryTopRightArea sizes describe the usable
+    // menu-bar regions. Their widths are screen-local measurements; deriving
+    // the notch from those widths avoids mixing local and global coordinates.
+    private func notchMetrics(on screen: NSScreen) -> (centerX: CGFloat, width: CGFloat, height: CGFloat) {
+        if screen.safeAreaInsets.top > 0,
+           let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea {
+            let notchWidth = max(0, screen.frame.width - left.width - right.width)
+            if notchWidth > 0 {
+                let centerX = screen.frame.minX + left.width + notchWidth / 2
+                return (centerX, notchWidth, screen.safeAreaInsets.top)
+            }
         }
 
-        return screen.frame.midX
+        return (screen.frame.midX, 180, max(24, screen.safeAreaInsets.top))
+    }
+
+    private func compactSize(on screen: NSScreen) -> NSSize {
+        let notch = notchMetrics(on: screen)
+        // Leave useful wings on both sides of the physical camera housing.
+        return NSSize(width: max(320, notch.width + 170), height: max(52, notch.height + 18))
     }
 
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
-        let centerX = notchCenterX(on: screen)
+        let centerX = notchMetrics(on: screen).centerX
         let x = centerX - size.width / 2
-
-        // Critical geometry rule: the panel's TOP edge is always the physical
-        // top edge of the display. Resizing therefore happens only downward.
-        // safeAreaInsets.top is intentionally NOT subtracted here.
         let y = screen.frame.maxY - size.height
-
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
@@ -83,7 +82,7 @@ final class IslandWindowController {
         state.isExpanded.toggle()
         if !state.isExpanded { state.selectedTab = .home }
 
-        let targetSize = state.isExpanded ? expandedSize : compactSize
+        let targetSize = state.isExpanded ? expandedSize : compactSize(on: screen)
         let targetFrame = frame(for: targetSize, on: screen)
 
         NSAnimationContext.runAnimationGroup { context in
