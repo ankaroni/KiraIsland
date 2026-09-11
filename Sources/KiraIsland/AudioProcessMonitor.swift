@@ -95,17 +95,41 @@ final class AudioProcessMonitor: ObservableObject {
             return direct
         }
 
-        guard let childBundleID = processApp?.bundleIdentifier else { return processApp }
+        let childBundleID = processApp?.bundleIdentifier
+        let childName = processApp?.localizedName?.lowercased() ?? ""
 
-        return regularApps
-            .compactMap { app -> (NSRunningApplication, Int)? in
-                guard let parentBundleID = app.bundleIdentifier,
-                      childBundleID == parentBundleID || childBundleID.hasPrefix(parentBundleID + ".")
-                else { return nil }
-                return (app, parentBundleID.count)
-            }
-            .max(by: { $0.1 < $1.1 })?.0
-            ?? processApp
+        // First prefer bundle hierarchy. This catches most Chromium/Electron helpers.
+        if let childBundleID {
+            let bundleMatch = regularApps
+                .compactMap { app -> (NSRunningApplication, Int)? in
+                    guard let parentBundleID = app.bundleIdentifier,
+                          childBundleID == parentBundleID || childBundleID.hasPrefix(parentBundleID + ".")
+                    else { return nil }
+                    return (app, parentBundleID.count)
+                }
+                .max(by: { $0.1 < $1.1 })?.0
+
+            if let bundleMatch { return bundleMatch }
+        }
+
+        // Safari/WebKit and a few media helpers don't preserve the parent bundle
+        // prefix, but their visible process name usually begins with the owner name
+        // (for example "Safari Graphics and Media").
+        if !childName.isEmpty {
+            let nameMatch = regularApps
+                .compactMap { app -> (NSRunningApplication, Int)? in
+                    guard let parentName = app.localizedName?.lowercased(),
+                          !parentName.isEmpty,
+                          childName == parentName || childName.hasPrefix(parentName + " ")
+                    else { return nil }
+                    return (app, parentName.count)
+                }
+                .max(by: { $0.1 < $1.1 })?.0
+
+            if let nameMatch { return nameMatch }
+        }
+
+        return processApp
     }
 
     private func audioProcessObjects() -> [AudioObjectID] {
