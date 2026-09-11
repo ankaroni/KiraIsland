@@ -4,6 +4,7 @@ struct IslandView: View {
     @ObservedObject var state: IslandState
     @ObservedObject var model: AppModel
     let notchWidth: CGFloat
+    let notchHeight: CGFloat
     let compactWingWidth: CGFloat
     let onToggle: () -> Void
 
@@ -11,7 +12,7 @@ struct IslandView: View {
         Group {
             if state.isExpanded {
                 expandedShell
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.988, anchor: .top)))
             } else {
                 compactContent
                     .contentShape(Rectangle())
@@ -19,20 +20,23 @@ struct IslandView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.snappy(duration: 0.24), value: state.isExpanded)
+        .animation(.snappy(duration: 0.26), value: state.isExpanded)
     }
 
     private var expandedShell: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.black.opacity(0.98))
+        ZStack(alignment: .top) {
+            ExpandedIslandShape(notchWidth: notchWidth, notchHeight: notchHeight)
+                .fill(.black.opacity(0.985))
+                .shadow(color: .black.opacity(0.42), radius: 22, y: 12)
 
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
+            ExpandedIslandShape(notchWidth: notchWidth, notchHeight: notchHeight)
+                .stroke(.white.opacity(0.085), lineWidth: 1)
 
             expandedContent
+                .padding(.top, notchHeight + 13)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
         }
-        .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
     }
 
     private var compactContent: some View {
@@ -117,7 +121,7 @@ struct IslandView: View {
         .fill(.black)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(.white.opacity(0.06))
+                .fill(.white.opacity(0.055))
                 .frame(height: 0.5)
         }
     }
@@ -135,10 +139,9 @@ struct IslandView: View {
                 case .timer: timerTab
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
         .foregroundStyle(.white)
-        .padding(16)
     }
 
     private var header: some View {
@@ -431,7 +434,7 @@ struct IslandView: View {
                 .font(.system(size: 10.5))
         }
         .foregroundStyle(.white.opacity(0.42))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 70)
     }
 
     private var audioStatusText: String {
@@ -455,6 +458,66 @@ struct IslandView: View {
         case ..<0.67: return "speaker.wave.2.fill"
         default: return "speaker.wave.3.fill"
         }
+    }
+}
+
+private struct ExpandedIslandShape: Shape {
+    let notchWidth: CGFloat
+    let notchHeight: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let outerRadius: CGFloat = 28
+        let shoulderRadius: CGFloat = 16
+        let clearance: CGFloat = 10
+        let cutoutWidth = min(rect.width - 80, notchWidth + clearance * 2)
+        let leftCut = rect.midX - cutoutWidth / 2
+        let rightCut = rect.midX + cutoutWidth / 2
+        let cutBottom = min(max(notchHeight + 4, 28), rect.height * 0.30)
+
+        var path = Path()
+        path.move(to: CGPoint(x: outerRadius, y: 0))
+        path.addLine(to: CGPoint(x: leftCut - shoulderRadius, y: 0))
+        path.addQuadCurve(
+            to: CGPoint(x: leftCut, y: shoulderRadius),
+            control: CGPoint(x: leftCut, y: 0)
+        )
+        path.addLine(to: CGPoint(x: leftCut, y: cutBottom - shoulderRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: leftCut + shoulderRadius, y: cutBottom),
+            control: CGPoint(x: leftCut, y: cutBottom)
+        )
+        path.addLine(to: CGPoint(x: rightCut - shoulderRadius, y: cutBottom))
+        path.addQuadCurve(
+            to: CGPoint(x: rightCut, y: cutBottom - shoulderRadius),
+            control: CGPoint(x: rightCut, y: cutBottom)
+        )
+        path.addLine(to: CGPoint(x: rightCut, y: shoulderRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: rightCut + shoulderRadius, y: 0),
+            control: CGPoint(x: rightCut, y: 0)
+        )
+        path.addLine(to: CGPoint(x: rect.width - outerRadius, y: 0))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width, y: outerRadius),
+            control: CGPoint(x: rect.width, y: 0)
+        )
+        path.addLine(to: CGPoint(x: rect.width, y: rect.height - outerRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width - outerRadius, y: rect.height),
+            control: CGPoint(x: rect.width, y: rect.height)
+        )
+        path.addLine(to: CGPoint(x: outerRadius, y: rect.height))
+        path.addQuadCurve(
+            to: CGPoint(x: 0, y: rect.height - outerRadius),
+            control: CGPoint(x: 0, y: rect.height)
+        )
+        path.addLine(to: CGPoint(x: 0, y: outerRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: outerRadius, y: 0),
+            control: CGPoint(x: 0, y: 0)
+        )
+        path.closeSubpath()
+        return path
     }
 }
 
