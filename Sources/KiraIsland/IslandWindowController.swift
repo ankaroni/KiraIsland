@@ -6,12 +6,15 @@ import QuartzCore
 final class IslandWindowController {
     private let expandedSize = NSSize(width: 500, height: 380)
     private let compactWingWidth: CGFloat = 132
+    private let expandedTopGap: CGFloat = 6
 
     private let state = IslandState()
     private let model = AppModel()
 
     private var panel: NSPanel?
     private var isAnimating = false
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
 
     func show() {
         guard let screen = preferredScreen() else {
@@ -21,7 +24,7 @@ final class IslandWindowController {
 
         model.start()
         let metrics = notchMetrics(on: screen)
-        let frame = frame(for: compactSize(on: screen), on: screen)
+        let frame = compactFrame(on: screen)
         let panel = IslandPanel(contentRect: frame)
         panel.contentView = NSHostingView(
             rootView: IslandView(
@@ -33,10 +36,12 @@ final class IslandWindowController {
             )
         )
         self.panel = panel
+        installOutsideClickMonitors()
         panel.orderFrontRegardless()
     }
 
     func close() {
+        removeOutsideClickMonitors()
         model.stop()
         panel?.orderOut(nil)
         panel = nil
@@ -64,38 +69,97 @@ final class IslandWindowController {
 
     private func compactSize(on screen: NSScreen) -> NSSize {
         let notch = notchMetrics(on: screen)
-        // The center is intentionally transparent. Only the two wings are drawn.
         return NSSize(
             width: notch.width + compactWingWidth * 2,
             height: max(36, notch.height)
         )
     }
 
-    private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
-        let centerX = notchMetrics(on: screen).centerX
-        let x = centerX - size.width / 2
-        let y = screen.frame.maxY - size.height
-        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    private func compactFrame(on screen: NSScreen) -> NSRect {
+        let metrics = notchMetrics(on: screen)
+        let size = compactSize(on: screen)
+        return NSRect(
+            x: metrics.centerX - size.width / 2,
+            y: screen.frame.maxY - size.height,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private func expandedFrame(on screen: NSScreen) -> NSRect {
+        let metrics = notchMetrics(on: screen)
+        // The expanded card starts BELOW the physical camera housing. This
+        // keeps the header, tabs and controls completely clear of the notch.
+        let top = screen.frame.maxY - metrics.height - expandedTopGap
+        return NSRect(
+            x: metrics.centerX - expandedSize.width / 2,
+            y: top - expandedSize.height,
+            width: expandedSize.width,
+            height: expandedSize.height
+        )
     }
 
     private func toggle() {
+        setExpanded(!state.isExpanded)
+    }
+
+    private func setExpanded(_ expanded: Bool) {
         guard !isAnimating, let panel else { return }
         guard let screen = panel.screen ?? preferredScreen() else { return }
+        guard state.isExpanded != expanded else { return }
 
         isAnimating = true
-        state.isExpanded.toggle()
-        if !state.isExpanded { state.selectedTab = .home }
+        state.isExpanded = expanded
+        if !expanded { state.selectedTab = .home }
 
-        let targetSize = state.isExpanded ? expandedSize : compactSize(on: screen)
-        let targetFrame = frame(for: targetSize, on: screen)
+        let targetFrame = expanded ? expandedFrame(on: screen) : compactFrame(on: screen)
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.22, 1.0)
+            context.duration = expanded ? 0.30 : 0.22
+            context.timingFunction = expanded
+                ? CAMediaTimingFunction(controlPoints: 0.16, 0.84, 0.22, 1.0)
+                : CAMediaTimingFunction(controlPoints: 0.30, 0.00, 0.30, 1.0)
             panel.animator().setFrame(targetFrame, display: true)
         } completionHandler: { [weak self] in
-            Task { @MainActor in self?.isAnimating = false }
+            Task { @MainActor in
+                self?.isAnimating = false
+            }
         }
+    }
+
+    private func installOutsideClickMonitors() {
+        removeOutsideClickMonitors()
+
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.collapseIfClickIsOutside()
+            }
+            return event
+        }
+
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.collapseIfClickIsOutside()
+            }
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
+    }
+
+    private func collapseIfClickIsOutside() {
+        guard state.isExpanded, !isAnimating, let panel else { return }
+        let point = NSEvent.mouseLocation
+        guard !panel.frame.contains(point) else { return }
+        setExpanded(false)
     }
 }
 
@@ -112,7 +176,7 @@ final class IslandPanel: NSPanel {
         )
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false
+        hasShadow = true
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isMovable = false
