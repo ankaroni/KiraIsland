@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 import QuartzCore
+import Combine
 
 @MainActor
 final class IslandWindowController {
     private let preferredExpandedWidth: CGFloat = 520
-    private let preferredExpandedHeight: CGFloat = 390
     private let compactWingWidth: CGFloat = 140
     private let expandedTopGap: CGFloat = 8
 
@@ -18,6 +18,7 @@ final class IslandWindowController {
     private var globalMouseMonitor: Any?
     private var keyMonitor: Any?
     private var screenObserver: NSObjectProtocol?
+    private var cancellables = Set<AnyCancellable>()
 
     func show() {
         guard let screen = preferredScreen() else {
@@ -42,10 +43,12 @@ final class IslandWindowController {
         self.panel = panel
         installEventMonitors()
         installScreenObserver()
+        installContentSizeObservers()
         panel.orderFrontRegardless()
     }
 
     func close() {
+        cancellables.removeAll()
         removeEventMonitors()
         removeScreenObserver()
         model.stop()
@@ -54,7 +57,6 @@ final class IslandWindowController {
     }
 
     private func preferredScreen() -> NSScreen? {
-        // Prefer the built-in notched display even when another monitor is main.
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
             ?? NSScreen.main
             ?? NSScreen.screens.first
@@ -62,17 +64,12 @@ final class IslandWindowController {
 
     private func notchMetrics(on screen: NSScreen) -> (centerX: CGFloat, width: CGFloat, height: CGFloat) {
         let height = max(24, screen.safeAreaInsets.top)
-
-        // The MacBook camera housing is physically centered on the display.
-        // Always anchor X to the display midpoint; auxiliary rect coordinates can
-        // vary between macOS releases and display arrangements.
         let centerX = screen.frame.midX
 
         if screen.safeAreaInsets.top > 0,
            let left = screen.auxiliaryTopLeftArea,
            let right = screen.auxiliaryTopRightArea {
             let measured = screen.frame.width - left.width - right.width
-            // Reject pathological values from unusual display configurations.
             let width = min(max(measured, 120), 260)
             return (centerX, width, height)
         }
@@ -100,22 +97,50 @@ final class IslandWindowController {
         )
     }
 
-    private func expandedSize(on screen: NSScreen) -> NSSize {
-        let metrics = notchMetrics(on: screen)
-        let availableWidth = max(360, screen.frame.width - 32)
-        let availableHeight = max(280, screen.frame.height - metrics.height - 40)
+    private func desiredExpandedHeight(on screen: NSScreen) -> CGFloat {
+        // Shared shell: outer padding + header + tab bar + their spacing.
+        let shellHeight: CGFloat = 136
+        let bodyHeight: CGFloat
 
+        switch state.selectedTab {
+        case .home:
+            // Three status cards only; no reason to keep a large empty canvas.
+            bodyHeight = 112
+
+        case .audio:
+            // Master slider + device pills + mixer title/spacing + visible app rows.
+            let visibleRows = min(max(model.audioProcesses.apps.count, 1), 3)
+            bodyHeight = 102 + CGFloat(visibleRows) * 53
+
+        case .clipboard:
+            if model.clipboard.entries.isEmpty {
+                bodyHeight = 92
+            } else {
+                let visibleRows = min(model.clipboard.entries.count, 5)
+                bodyHeight = 48 + CGFloat(visibleRows) * 38
+            }
+
+        case .timer:
+            bodyHeight = model.timer.remainingSeconds > 0 ? 118 : 128
+        }
+
+        let naturalHeight = shellHeight + bodyHeight
+        let metrics = notchMetrics(on: screen)
+        let maximum = max(240, screen.frame.height - metrics.height - expandedTopGap - 24)
+        return min(max(naturalHeight, 220), maximum)
+    }
+
+    private func expandedSize(on screen: NSScreen) -> NSSize {
+        let availableWidth = max(360, screen.frame.width - 32)
         return NSSize(
             width: min(preferredExpandedWidth, availableWidth),
-            height: min(preferredExpandedHeight, availableHeight)
+            height: desiredExpandedHeight(on: screen)
         )
     }
 
     private func expandedFrame(on screen: NSScreen) -> NSRect {
         let metrics = notchMetrics(on: screen)
         let size = expandedSize(on: screen)
-
-        // Expanded content lives entirely below the physical camera housing.
         let top = screen.frame.maxY - metrics.height - expandedTopGap
 
         return NSRect(
@@ -160,6 +185,48 @@ final class IslandWindowController {
         }
     }
 
+    private func installContentSizeObservers() {
+        cancellables.removeAll()
+
+        state.$selectedTab
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.resizeExpandedToFit(animated: true)
+                }
+            }
+            .store(in: &cancellables)
+
+        model.objectWillChange
+            .sink { [weak self] _ in
+                // objectWillChange is emitted before the child model mutation;
+                // defer one run-loop turn so sizing uses the new values.
+                Task { @MainActor in
+                    await Task.yield()
+                    self?.resizeExpandedToFit(animated: true)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resizeExpandedToFit(animated: Bool) {
+        guard state.isExpanded, !isAnimating, let panel else { return }
+        guard let screen = panel.screen ?? preferredScreen() else { return }
+
+        let target = expandedFrame(on: screen)
+        guard abs(target.height - panel.frame.height) > 1.0 else { return }
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.20
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.20, 0.80, 0.20, 1.0)
+                panel.animator().setFrame(target, display: true)
+            }
+        } else {
+            panel.setFrame(target, display: true)
+        }
+    }
+
     private func installEventMonitors() {
         removeEventMonitors()
 
@@ -177,7 +244,7 @@ final class IslandWindowController {
         }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape
+            if event.keyCode == 53 {
                 Task { @MainActor in
                     guard let self, self.state.isExpanded else { return }
                     self.setExpanded(false)
