@@ -34,14 +34,15 @@ struct AudioMixerSection: View {
                 .padding(10)
                 .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
             } else {
-                ScrollView {
-                    VStack(spacing: 7) {
+                ScrollView(.vertical, showsIndicators: processes.apps.count > 3) {
+                    LazyVStack(spacing: 7) {
                         ForEach(processes.apps) { app in
                             appRow(app)
                         }
                     }
                 }
-                .frame(maxHeight: 120)
+                .frame(minHeight: min(CGFloat(processes.apps.count) * 53, 53),
+                       maxHeight: 190)
             }
         }
         .onAppear { mixer.start(monitor: processes) }
