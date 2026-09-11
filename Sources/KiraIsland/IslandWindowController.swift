@@ -7,7 +7,6 @@ import Combine
 final class IslandWindowController {
     private let preferredExpandedWidth: CGFloat = 520
     private let compactWingWidth: CGFloat = 140
-    private let expandedTopGap: CGFloat = 8
 
     private let state = IslandState()
     private let model = AppModel()
@@ -35,6 +34,7 @@ final class IslandWindowController {
                 state: state,
                 model: model,
                 notchWidth: metrics.width,
+                notchHeight: metrics.height,
                 compactWingWidth: compactWingWidth,
                 onToggle: { [weak self] in self?.toggle() }
             )
@@ -97,18 +97,16 @@ final class IslandWindowController {
         )
     }
 
-    private func desiredExpandedHeight(on screen: NSScreen) -> CGFloat {
-        // Shared shell: outer padding + header + tab bar + their spacing.
-        let shellHeight: CGFloat = 136
+    private func desiredExpandedBodyHeight(on screen: NSScreen) -> CGFloat {
+        // Header + tab bar + padding/spacing shared by every tab.
+        let shellHeight: CGFloat = 132
         let bodyHeight: CGFloat
 
         switch state.selectedTab {
         case .home:
-            // Three status cards only; no reason to keep a large empty canvas.
             bodyHeight = 112
 
         case .audio:
-            // Master slider + device pills + mixer title/spacing + visible app rows.
             let visibleRows = min(max(model.audioProcesses.apps.count, 1), 3)
             bodyHeight = 102 + CGFloat(visibleRows) * 53
 
@@ -124,28 +122,30 @@ final class IslandWindowController {
             bodyHeight = model.timer.remainingSeconds > 0 ? 118 : 128
         }
 
-        let naturalHeight = shellHeight + bodyHeight
-        let metrics = notchMetrics(on: screen)
-        let maximum = max(240, screen.frame.height - metrics.height - expandedTopGap - 24)
-        return min(max(naturalHeight, 220), maximum)
+        return shellHeight + bodyHeight
     }
 
     private func expandedSize(on screen: NSScreen) -> NSSize {
+        let metrics = notchMetrics(on: screen)
         let availableWidth = max(360, screen.frame.width - 32)
+        let naturalHeight = metrics.height + desiredExpandedBodyHeight(on: screen)
+        let maximumHeight = max(260, screen.frame.height - 24)
+
         return NSSize(
             width: min(preferredExpandedWidth, availableWidth),
-            height: desiredExpandedHeight(on: screen)
+            height: min(naturalHeight, maximumHeight)
         )
     }
 
     private func expandedFrame(on screen: NSScreen) -> NSRect {
         let metrics = notchMetrics(on: screen)
         let size = expandedSize(on: screen)
-        let top = screen.frame.maxY - metrics.height - expandedTopGap
 
+        // Keep the expanded shell anchored to the physical top edge just like
+        // the compact wings. The SwiftUI shape itself cuts out the camera area.
         return NSRect(
             x: metrics.centerX - size.width / 2,
-            y: top - size.height,
+            y: screen.frame.maxY - size.height,
             width: size.width,
             height: size.height
         )
@@ -173,10 +173,10 @@ final class IslandWindowController {
 
         isAnimating = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = expanded ? 0.28 : 0.20
+            context.duration = expanded ? 0.30 : 0.22
             context.timingFunction = expanded
-                ? CAMediaTimingFunction(controlPoints: 0.18, 0.88, 0.20, 1.0)
-                : CAMediaTimingFunction(controlPoints: 0.35, 0.00, 0.30, 1.0)
+                ? CAMediaTimingFunction(controlPoints: 0.16, 0.86, 0.20, 1.0)
+                : CAMediaTimingFunction(controlPoints: 0.34, 0.00, 0.30, 1.0)
             panel.animator().setFrame(targetFrame, display: true)
         } completionHandler: { [weak self] in
             Task { @MainActor in
@@ -199,8 +199,6 @@ final class IslandWindowController {
 
         model.objectWillChange
             .sink { [weak self] _ in
-                // objectWillChange is emitted before the child model mutation;
-                // defer one run-loop turn so sizing uses the new values.
                 Task { @MainActor in
                     await Task.yield()
                     self?.resizeExpandedToFit(animated: true)
@@ -317,7 +315,7 @@ final class IslandPanel: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isMovable = false
