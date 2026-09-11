@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AudioMixerSection: View {
     @ObservedObject var processes: AudioProcessMonitor
-    @ObservedObject var mixer: PerAppAudioManager
+    @StateObject private var mixer = PerAppAudioManager()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -44,6 +44,8 @@ struct AudioMixerSection: View {
                 .frame(maxHeight: 120)
             }
         }
+        .onAppear { mixer.start(monitor: processes) }
+        .onDisappear { mixer.stop() }
     }
 
     private func appRow(_ app: AudibleAudioApp) -> some View {
@@ -71,9 +73,7 @@ struct AudioMixerSection: View {
                     Text(app.name)
                         .font(.system(size: 10.5, weight: .semibold))
                         .lineLimit(1)
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 5, height: 5)
+                    Circle().fill(.green).frame(width: 5, height: 5)
                 }
 
                 Slider(
