@@ -5,7 +5,7 @@ import QuartzCore
 @MainActor
 final class IslandWindowController {
     private let compactSize = NSSize(width: 250, height: 42)
-    private let expandedSize = NSSize(width: 470, height: 270)
+    private let expandedSize = NSSize(width: 500, height: 360)
 
     private let state = IslandState()
     private let model = AppModel()
@@ -45,23 +45,41 @@ final class IslandWindowController {
             ?? NSScreen.screens.first
     }
 
+    private func notchCenterX(on screen: NSScreen) -> CGFloat {
+        let left = screen.auxiliaryTopLeftArea
+        let right = screen.auxiliaryTopRightArea
+
+        // On notched MacBooks these are the menu-bar areas on either side of
+        // the camera housing. The gap between them is the real physical notch.
+        if left.width > 0, right.width > 0, right.minX > left.maxX {
+            return (left.maxX + right.minX) / 2
+        }
+
+        return screen.frame.midX
+    }
+
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
-        let x = screen.frame.midX - size.width / 2
-        // safeAreaInsets.top is the real camera/notch exclusion height on notched MacBooks.
-        // Put the island immediately BELOW it so no UI is hidden behind the camera housing.
+        let centerX = notchCenterX(on: screen)
+        let x = centerX - size.width / 2
+
+        // Keep the whole UI below the camera housing, touching its bottom edge.
         let notchBottomY = screen.frame.maxY - screen.safeAreaInsets.top
         let y = notchBottomY - size.height
+
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     private func toggle() {
         guard !isAnimating, let panel else { return }
         guard let screen = panel.screen ?? preferredScreen() else { return }
+
         isAnimating = true
         state.isExpanded.toggle()
         if !state.isExpanded { state.selectedTab = .home }
+
         let targetSize = state.isExpanded ? expandedSize : compactSize
         let targetFrame = frame(for: targetSize, on: screen)
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.22
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.22, 1.0)
@@ -77,7 +95,12 @@ final class IslandPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     init(contentRect: NSRect) {
-        super.init(contentRect: contentRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
