@@ -46,12 +46,13 @@ final class IslandWindowController {
     }
 
     private func notchCenterX(on screen: NSScreen) -> CGFloat {
-        let left = screen.auxiliaryTopLeftArea
-        let right = screen.auxiliaryTopRightArea
-
-        // On notched MacBooks these are the menu-bar areas on either side of
-        // the camera housing. The gap between them is the real physical notch.
-        if left.width > 0, right.width > 0, right.minX > left.maxX {
+        // These areas are optional. They are only present when macOS exposes
+        // the menu-bar regions around a physical camera notch.
+        if let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea,
+           left.width > 0,
+           right.width > 0,
+           right.minX > left.maxX {
             return (left.maxX + right.minX) / 2
         }
 
