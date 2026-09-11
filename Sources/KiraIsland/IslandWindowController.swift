@@ -4,7 +4,7 @@ import QuartzCore
 
 @MainActor
 final class IslandWindowController {
-    private let compactSize = NSSize(width: 220, height: 44)
+    private let compactSize = NSSize(width: 250, height: 42)
     private let expandedSize = NSSize(width: 470, height: 270)
 
     private let state = IslandState()
@@ -49,10 +49,10 @@ final class IslandWindowController {
     }
 
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
-        let topInset = max(screen.safeAreaInsets.top, 28)
+        // Pin directly to the physical top edge. The island grows downward,
+        // keeping its top edge aligned with the MacBook menu bar / notch area.
         let x = screen.frame.midX - size.width / 2
-        let topY = screen.frame.maxY - topInset - 4
-        let y = topY - size.height
+        let y = screen.frame.maxY - size.height
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
