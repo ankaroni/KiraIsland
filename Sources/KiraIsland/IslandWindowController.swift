@@ -5,10 +5,12 @@ import QuartzCore
 @MainActor
 final class IslandWindowController {
     private let compactSize = NSSize(width: 220, height: 44)
-    private let expandedSize = NSSize(width: 430, height: 180)
+    private let expandedSize = NSSize(width: 470, height: 270)
+
+    private let state = IslandState()
+    private let model = AppModel()
 
     private var panel: NSPanel?
-    private var isExpanded = false
     private var isAnimating = false
 
     func show() {
@@ -17,12 +19,14 @@ final class IslandWindowController {
             return
         }
 
+        model.start()
+
         let frame = frame(for: compactSize, on: screen)
         let panel = IslandPanel(contentRect: frame)
-
         panel.contentView = NSHostingView(
             rootView: IslandView(
-                isExpanded: { [weak self] in self?.isExpanded ?? false },
+                state: state,
+                model: model,
                 onToggle: { [weak self] in self?.toggle() }
             )
         )
@@ -30,6 +34,12 @@ final class IslandWindowController {
         self.panel = panel
         panel.orderFrontRegardless()
         print("✅ Island panel created: \(frame)")
+    }
+
+    func close() {
+        model.stop()
+        panel?.orderOut(nil)
+        panel = nil
     }
 
     private func preferredScreen() -> NSScreen? {
@@ -41,40 +51,28 @@ final class IslandWindowController {
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
         let topInset = max(screen.safeAreaInsets.top, 28)
         let x = screen.frame.midX - size.width / 2
-        let topY = screen.frame.maxY - topInset - 6
+        let topY = screen.frame.maxY - topInset - 4
         let y = topY - size.height
-
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     private func toggle() {
-        guard !isAnimating else {
-            print("⏳ Ignored toggle during animation")
-            return
-        }
-
-        guard let panel else { return }
+        guard !isAnimating, let panel else { return }
         guard let screen = panel.screen ?? preferredScreen() else { return }
 
         isAnimating = true
-        isExpanded.toggle()
+        state.isExpanded.toggle()
+        if !state.isExpanded { state.selectedTab = .home }
 
-        let targetSize = isExpanded ? expandedSize : compactSize
+        let targetSize = state.isExpanded ? expandedSize : compactSize
         let targetFrame = frame(for: targetSize, on: screen)
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.24
-            context.timingFunction = CAMediaTimingFunction(
-                controlPoints: 0.22,
-                0.82,
-                0.22,
-                1.0
-            )
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.22, 1.0)
             panel.animator().setFrame(targetFrame, display: true)
         } completionHandler: { [weak self] in
-            Task { @MainActor in
-                self?.isAnimating = false
-            }
+            Task { @MainActor in self?.isAnimating = false }
         }
     }
 }
@@ -95,14 +93,7 @@ final class IslandPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-
-        collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle
-        ]
-
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isMovable = false
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
