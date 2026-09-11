@@ -5,6 +5,7 @@ import QuartzCore
 @MainActor
 final class IslandWindowController {
     private let expandedSize = NSSize(width: 500, height: 380)
+    private let compactWingWidth: CGFloat = 132
 
     private let state = IslandState()
     private let model = AppModel()
@@ -19,12 +20,15 @@ final class IslandWindowController {
         }
 
         model.start()
+        let metrics = notchMetrics(on: screen)
         let frame = frame(for: compactSize(on: screen), on: screen)
         let panel = IslandPanel(contentRect: frame)
         panel.contentView = NSHostingView(
             rootView: IslandView(
                 state: state,
                 model: model,
+                notchWidth: metrics.width,
+                compactWingWidth: compactWingWidth,
                 onToggle: { [weak self] in self?.toggle() }
             )
         )
@@ -44,9 +48,6 @@ final class IslandWindowController {
             ?? NSScreen.screens.first
     }
 
-    // auxiliaryTopLeftArea / auxiliaryTopRightArea sizes describe the usable
-    // menu-bar regions. Their widths are screen-local measurements; deriving
-    // the notch from those widths avoids mixing local and global coordinates.
     private func notchMetrics(on screen: NSScreen) -> (centerX: CGFloat, width: CGFloat, height: CGFloat) {
         if screen.safeAreaInsets.top > 0,
            let left = screen.auxiliaryTopLeftArea,
@@ -63,8 +64,11 @@ final class IslandWindowController {
 
     private func compactSize(on screen: NSScreen) -> NSSize {
         let notch = notchMetrics(on: screen)
-        // Leave useful wings on both sides of the physical camera housing.
-        return NSSize(width: max(320, notch.width + 170), height: max(52, notch.height + 18))
+        // The center is intentionally transparent. Only the two wings are drawn.
+        return NSSize(
+            width: notch.width + compactWingWidth * 2,
+            height: max(36, notch.height)
+        )
     }
 
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
