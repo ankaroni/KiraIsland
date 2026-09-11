@@ -23,6 +23,36 @@ final class AudioDeviceManager: ObservableObject {
     @Published private(set) var masterVolume: Float = 0
     @Published private(set) var canControlVolume = false
 
+    private var monitorTask: Task<Void, Never>?
+
+    var masterVolumePercent: Int {
+        Int((masterVolume * 100).rounded())
+    }
+
+    func startMonitoring() {
+        stopMonitoring()
+        refresh()
+
+        monitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, let self else { break }
+
+                let currentDefault = self.defaultOutputDevice()
+                if currentDefault != self.selectedID {
+                    self.refresh()
+                } else {
+                    self.refreshVolume()
+                }
+            }
+        }
+    }
+
+    func stopMonitoring() {
+        monitorTask?.cancel()
+        monitorTask = nil
+    }
+
     func refresh() {
         selectedID = defaultOutputDevice()
         outputs = allOutputDevices().sorted {
