@@ -10,5 +10,15 @@ final class IslandState: ObservableObject {
 
     @Published var isExpanded = false
     @Published var selectedTab: Tab = .home
-    @Published var isPinned = false
+    @Published var isPinned: Bool {
+        didSet {
+            UserDefaults.standard.set(isPinned, forKey: Self.pinDefaultsKey)
+        }
+    }
+
+    private static let pinDefaultsKey = "KiraIsland.isPinned"
+
+    init() {
+        isPinned = UserDefaults.standard.bool(forKey: Self.pinDefaultsKey)
+    }
 }
