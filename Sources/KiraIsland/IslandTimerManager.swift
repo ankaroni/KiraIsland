@@ -5,7 +5,7 @@ final class IslandTimerManager: ObservableObject {
     @Published private(set) var remainingSeconds = 0
     @Published private(set) var isRunning = false
 
-    private var timer: Timer?
+    private var countdownTask: Task<Void, Never>?
 
     var formatted: String {
         let minutes = remainingSeconds / 60
@@ -14,42 +14,26 @@ final class IslandTimerManager: ObservableObject {
     }
 
     func start(minutes: Int) {
-        stop()
+        countdownTask?.cancel()
         remainingSeconds = max(1, minutes * 60)
         isRunning = true
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-            Task { @MainActor in
-                guard let self else { timer.invalidate(); return }
-                if self.remainingSeconds > 0 {
-                    self.remainingSeconds -= 1
-                }
-                if self.remainingSeconds <= 0 {
-                    self.stop()
-                }
-            }
-        }
+        beginCountdown()
     }
 
     func togglePause() {
         if isRunning {
-            timer?.invalidate()
-            timer = nil
+            countdownTask?.cancel()
+            countdownTask = nil
             isRunning = false
         } else if remainingSeconds > 0 {
             isRunning = true
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-                Task { @MainActor in
-                    guard let self else { timer.invalidate(); return }
-                    self.remainingSeconds -= 1
-                    if self.remainingSeconds <= 0 { self.stop() }
-                }
-            }
+            beginCountdown()
         }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        countdownTask?.cancel()
+        countdownTask = nil
         isRunning = false
         if remainingSeconds < 0 { remainingSeconds = 0 }
     }
@@ -57,5 +41,27 @@ final class IslandTimerManager: ObservableObject {
     func reset() {
         stop()
         remainingSeconds = 0
+    }
+
+    private func beginCountdown() {
+        countdownTask?.cancel()
+        countdownTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+
+                guard let self, self.isRunning else { return }
+                self.remainingSeconds = max(0, self.remainingSeconds - 1)
+
+                if self.remainingSeconds == 0 {
+                    self.isRunning = false
+                    self.countdownTask = nil
+                    return
+                }
+            }
+        }
     }
 }
