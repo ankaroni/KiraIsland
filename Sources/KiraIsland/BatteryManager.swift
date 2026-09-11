@@ -38,15 +38,15 @@ final class BatteryManager: ObservableObject {
             let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
             let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef],
             let source = sources.first,
-            let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any]
+            let raw = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [AnyHashable: Any]
         else { return }
 
-        let current = description[kIOPSCurrentCapacityKey] as? Int ?? 0
-        let maximum = description[kIOPSMaxCapacityKey] as? Int ?? 100
+        let current = raw[kIOPSCurrentCapacityKey] as? Int ?? 0
+        let maximum = raw[kIOPSMaxCapacityKey] as? Int ?? 100
         percentage = maximum > 0 ? Int((Double(current) / Double(maximum) * 100).rounded()) : 0
 
-        let state = description[kIOPSPowerSourceStateKey] as? String
-        isPluggedIn = state == kIOPSACPowerValue
-        isCharging = description[kIOPSIsChargingKey] as? Bool ?? false
+        let state = raw[kIOPSPowerSourceStateKey] as? String
+        isPluggedIn = state == (kIOPSACPowerValue as String)
+        isCharging = raw[kIOPSIsChargingKey] as? Bool ?? false
     }
 }
