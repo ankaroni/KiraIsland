@@ -2,17 +2,25 @@ import SwiftUI
 
 struct AudioMixerSection: View {
     @ObservedObject var processes: AudioProcessMonitor
+    @ObservedObject var mixer: PerAppAudioManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Now producing audio")
+                Text("App mixer")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.65))
                 Spacer()
-                Text("\(processes.apps.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
+                if let error = mixer.errorMessage {
+                    Text(error)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange.opacity(0.85))
+                        .lineLimit(1)
+                } else {
+                    Text("\(processes.apps.count) active")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
             }
 
             if processes.apps.isEmpty {
@@ -27,68 +35,75 @@ struct AudioMixerSection: View {
                 .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
             } else {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 7) {
                         ForEach(processes.apps) { app in
-                            HStack(spacing: 9) {
-                                Group {
-                                    if let icon = app.icon {
-                                        Image(nsImage: icon)
-                                            .resizable()
-                                            .scaledToFit()
-                                    } else {
-                                        Image(systemName: "app.fill")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .padding(3)
-                                    }
-                                }
-                                .frame(width: 24, height: 24)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(app.name)
-                                        .font(.system(size: 10.5, weight: .semibold))
-                                        .lineLimit(1)
-                                    Text("Playing audio")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.green.opacity(0.8))
-                                }
-
-                                Spacer()
-
-                                MiniAudioPulse(seed: app.id.hashValue)
-                                    .frame(width: 36, height: 16)
-
-                                Image(systemName: "speaker.wave.2.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.white.opacity(0.55))
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 7)
-                            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            appRow(app)
                         }
                     }
                 }
-                .frame(maxHeight: 105)
+                .frame(maxHeight: 120)
             }
         }
     }
-}
 
-private struct MiniAudioPulse: View {
-    let seed: Int
+    private func appRow(_ app: AudibleAudioApp) -> some View {
+        let gain = mixer.gain(for: app)
+        let percent = Int((gain * 100).rounded())
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 0.1)) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate * 6.0 + Double(abs(seed % 17))
-            HStack(alignment: .center, spacing: 1.8) {
-                ForEach(0..<6, id: \.self) { index in
-                    let height = 3 + abs(sin(phase + Double(index) * 0.8)) * 10
-                    Capsule()
-                        .fill(.white.opacity(0.7))
-                        .frame(width: 2, height: height)
+        return HStack(spacing: 8) {
+            Group {
+                if let icon = app.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Image(systemName: "app.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .padding(3)
                 }
             }
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(app.name)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .lineLimit(1)
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 5, height: 5)
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(mixer.gain(for: app)) },
+                        set: { mixer.setGain(Float($0), for: app) }
+                    ),
+                    in: 0...1
+                )
+                .controlSize(.mini)
+            }
+
+            Text("\(percent)%")
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .frame(width: 30, alignment: .trailing)
+                .foregroundStyle(.white.opacity(0.65))
+
+            Button {
+                mixer.toggleMute(for: app)
+            } label: {
+                Image(systemName: gain <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .background(.white.opacity(0.07), in: Circle())
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 }
