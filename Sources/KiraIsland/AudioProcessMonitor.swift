@@ -16,13 +16,16 @@ final class AudioProcessMonitor: ObservableObject {
     @Published private(set) var apps: [AudibleAudioApp] = []
 
     private var monitorTask: Task<Void, Never>?
+    private var lastSeen: [String: Date] = [:]
+    private var cachedApps: [String: AudibleAudioApp] = [:]
+    private let idleGrace: TimeInterval = 5.0
 
     func start() {
         stop()
         refresh()
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(700))
+                try? await Task.sleep(for: .milliseconds(600))
                 guard !Task.isCancelled else { break }
                 self?.refresh()
             }
@@ -32,9 +35,12 @@ final class AudioProcessMonitor: ObservableObject {
     func stop() {
         monitorTask?.cancel()
         monitorTask = nil
+        lastSeen.removeAll()
+        cachedApps.removeAll()
     }
 
     func refresh() {
+        let now = Date()
         let regularApps = NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy == .regular
         }
@@ -68,20 +74,39 @@ final class AudioProcessMonitor: ObservableObject {
             }
         }
 
-        let updated = groups.map { key, value in
-            AudibleAudioApp(
+        for (key, value) in groups {
+            let app = AudibleAudioApp(
                 id: key,
                 name: value.name,
                 bundleID: value.bundleID,
                 icon: value.app?.icon,
                 processIDs: Array(value.pids).sorted()
             )
+            cachedApps[key] = app
+            lastSeen[key] = now
         }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        // Keep a recently-audible app around briefly so track gaps and transient
+        // helper-process restarts do not make the mixer row flicker.
+        let retainedKeys = cachedApps.keys.filter { key in
+            guard let seen = lastSeen[key] else { return false }
+            return now.timeIntervalSince(seen) <= idleGrace
+        }
+
+        cachedApps = cachedApps.filter { retainedKeys.contains($0.key) }
+        lastSeen = lastSeen.filter { retainedKeys.contains($0.key) }
+
+        let updated = retainedKeys
+            .compactMap { cachedApps[$0] }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
         let oldIDs = apps.map(\.id)
         let newIDs = updated.map(\.id)
-        if oldIDs != newIDs || zip(apps, updated).contains(where: { $0.processIDs != $1.processIDs }) {
+        let processChanged = apps.count != updated.count || zip(apps, updated).contains { old, new in
+            old.id != new.id || old.processIDs != new.processIDs || old.name != new.name
+        }
+
+        if oldIDs != newIDs || processChanged {
             apps = updated
         }
     }
@@ -98,7 +123,6 @@ final class AudioProcessMonitor: ObservableObject {
         let childBundleID = processApp?.bundleIdentifier
         let childName = processApp?.localizedName?.lowercased() ?? ""
 
-        // First prefer bundle hierarchy. This catches most Chromium/Electron helpers.
         if let childBundleID {
             let bundleMatch = regularApps
                 .compactMap { app -> (NSRunningApplication, Int)? in
@@ -112,9 +136,6 @@ final class AudioProcessMonitor: ObservableObject {
             if let bundleMatch { return bundleMatch }
         }
 
-        // Safari/WebKit and a few media helpers don't preserve the parent bundle
-        // prefix, but their visible process name usually begins with the owner name
-        // (for example "Safari Graphics and Media").
         if !childName.isEmpty {
             let nameMatch = regularApps
                 .compactMap { app -> (NSRunningApplication, Int)? in
@@ -153,11 +174,7 @@ final class AudioProcessMonitor: ObservableObject {
     }
 
     private func processPID(_ objectID: AudioObjectID) -> pid_t {
-        readScalar(
-            objectID,
-            selector: kAudioProcessPropertyPID,
-            fallback: pid_t(-1)
-        )
+        readScalar(objectID, selector: kAudioProcessPropertyPID, fallback: pid_t(-1))
     }
 
     private func isRunningOutput(_ objectID: AudioObjectID) -> Bool {
