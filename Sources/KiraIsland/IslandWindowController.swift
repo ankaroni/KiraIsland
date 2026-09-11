@@ -46,8 +46,6 @@ final class IslandWindowController {
     }
 
     private func notchCenterX(on screen: NSScreen) -> CGFloat {
-        // These areas are optional. They are only present when macOS exposes
-        // the menu-bar regions around a physical camera notch.
         if let left = screen.auxiliaryTopLeftArea,
            let right = screen.auxiliaryTopRightArea,
            left.width > 0,
@@ -63,9 +61,13 @@ final class IslandWindowController {
         let centerX = notchCenterX(on: screen)
         let x = centerX - size.width / 2
 
-        // Keep the whole UI below the camera housing, touching its bottom edge.
+        // safeAreaInsets.top marks the bottom edge of the physical notch/menu-bar
+        // exclusion zone. Move the panel slightly upward into that zone so the
+        // black island visually joins the camera housing, while most controls
+        // remain below the physical notch instead of being covered by it.
         let notchBottomY = screen.frame.maxY - screen.safeAreaInsets.top
-        let y = notchBottomY - size.height
+        let overlap = min(CGFloat(12), max(CGFloat(6), screen.safeAreaInsets.top * 0.30))
+        let y = notchBottomY - size.height + overlap
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
