@@ -3,16 +3,24 @@ import SwiftUI
 struct IslandView: View {
     @ObservedObject var state: IslandState
     @ObservedObject var model: AppModel
+    let notchWidth: CGFloat
+    let compactWingWidth: CGFloat
     let onToggle: () -> Void
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: state.isExpanded ? 26 : 20, style: .continuous)
-                .fill(.black)
-
+        Group {
             if state.isExpanded {
-                expandedContent
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(.black)
+
+                    expandedContent
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(.white.opacity(0.10), lineWidth: 1)
+                }
             } else {
                 compactContent
                     .contentShape(Rectangle())
@@ -20,40 +28,71 @@ struct IslandView: View {
                     .transition(.opacity)
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: state.isExpanded ? 26 : 20, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
-        }
     }
 
     private var compactContent: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 0) {
+            compactLeftWing
+                .frame(width: compactWingWidth)
+
+            Color.clear
+                .frame(width: notchWidth)
+                .allowsHitTesting(false)
+
+            compactRightWing
+                .frame(width: compactWingWidth)
+        }
+        .foregroundStyle(.white)
+    }
+
+    private var compactLeftWing: some View {
+        HStack(spacing: 8) {
             if model.timer.remainingSeconds > 0 {
                 Image(systemName: "timer")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(.orange)
+
                 Text(model.timer.formatted)
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
             } else {
                 Image(systemName: volumeSymbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.82))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.88))
+
                 Text("\(model.audio.masterVolumePercent)%")
-                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
+
                 VolumeWaveform(level: model.audio.masterVolume)
-                    .frame(width: 54, height: 18)
+                    .frame(width: 45, height: 17)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.leading, 12)
+        .padding(.trailing, 8)
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 17,
+                bottomTrailingRadius: 17,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+            .fill(.black)
+        )
+    }
 
-            Spacer(minLength: 6)
-
+    private var compactRightWing: some View {
+        HStack(spacing: 8) {
             if !model.audioProcesses.apps.isEmpty {
                 HStack(spacing: 4) {
-                    Circle().fill(.green).frame(width: 6, height: 6)
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 6, height: 6)
                     Text("\(model.audioProcesses.apps.count)")
                 }
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(.white.opacity(0.78))
             }
 
             HStack(spacing: 5) {
@@ -61,10 +100,21 @@ struct IslandView: View {
                 Text("\(model.battery.percentage)%")
             }
             .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.68))
+            .foregroundStyle(.white.opacity(0.72))
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 15)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.leading, 8)
+        .padding(.trailing, 12)
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 17,
+                bottomTrailingRadius: 17,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+            .fill(.black)
+        )
     }
 
     private var expandedContent: some View {
