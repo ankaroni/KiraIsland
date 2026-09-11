@@ -7,6 +7,8 @@ struct AudioOutputDevice: Identifiable, Hashable {
 
     var symbolName: String {
         let lower = name.lowercased()
+        if lower.contains("airpods max") { return "airpodsmax" }
+        if lower.contains("airpods pro") { return "airpodspro" }
         if lower.contains("airpods") { return "airpods" }
         if lower.contains("headphone") || lower.contains("headset") { return "headphones" }
         if lower.contains("display") || lower.contains("hdmi") { return "display" }
@@ -23,7 +25,9 @@ final class AudioDeviceManager: ObservableObject {
 
     func refresh() {
         selectedID = defaultOutputDevice()
-        outputs = allOutputDevices().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        outputs = allOutputDevices().sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
         refreshVolume()
     }
 
@@ -42,16 +46,19 @@ final class AudioDeviceManager: ObservableObject {
             UInt32(MemoryLayout<AudioObjectID>.size),
             &deviceID
         )
-        if status == noErr {
-            selectedID = device.id
-            refreshVolume()
-        }
+        guard status == noErr else { return }
+        selectedID = device.id
+        refreshVolume()
     }
 
     func setVolume(_ value: Float) {
         guard selectedID != kAudioObjectUnknown else { return }
         let clamped = min(max(value, 0), 1)
-        let elements: [AudioObjectPropertyElement] = [kAudioObjectPropertyElementMain, 1, 2]
+        let elements: [AudioObjectPropertyElement] = [
+            kAudioObjectPropertyElementMain,
+            AudioObjectPropertyElement(1),
+            AudioObjectPropertyElement(2)
+        ]
         var changed = false
 
         for element in elements {
@@ -62,9 +69,18 @@ final class AudioDeviceManager: ObservableObject {
             )
             guard AudioObjectHasProperty(selectedID, &address) else { continue }
             var settable = DarwinBoolean(false)
-            guard AudioObjectIsPropertySettable(selectedID, &address, &settable) == noErr, settable.boolValue else { continue }
+            guard AudioObjectIsPropertySettable(selectedID, &address, &settable) == noErr,
+                  settable.boolValue else { continue }
+
             var volume = clamped
-            if AudioObjectSetPropertyData(selectedID, &address, 0, nil, UInt32(MemoryLayout<Float>.size), &volume) == noErr {
+            if AudioObjectSetPropertyData(
+                selectedID,
+                &address,
+                0,
+                nil,
+                UInt32(MemoryLayout<Float>.size),
+                &volume
+            ) == noErr {
                 changed = true
             }
         }
@@ -77,17 +93,25 @@ final class AudioDeviceManager: ObservableObject {
         masterVolume = 0
         guard selectedID != kAudioObjectUnknown else { return }
 
-        for element: AudioObjectPropertyElement in [kAudioObjectPropertyElementMain, 1, 2] {
+        let elements: [AudioObjectPropertyElement] = [
+            kAudioObjectPropertyElementMain,
+            AudioObjectPropertyElement(1),
+            AudioObjectPropertyElement(2)
+        ]
+
+        for element in elements {
             var address = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyVolumeScalar,
                 mScope: kAudioDevicePropertyScopeOutput,
                 mElement: element
             )
             guard AudioObjectHasProperty(selectedID, &address) else { continue }
+
             var settable = DarwinBoolean(false)
             let settableStatus = AudioObjectIsPropertySettable(selectedID, &address, &settable)
             var volume: Float = 0
             var size = UInt32(MemoryLayout<Float>.size)
+
             if AudioObjectGetPropertyData(selectedID, &address, 0, nil, &size, &volume) == noErr {
                 masterVolume = volume
                 canControlVolume = settableStatus == noErr && settable.boolValue
@@ -104,7 +128,14 @@ final class AudioDeviceManager: ObservableObject {
         )
         var id = AudioObjectID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id) == noErr else {
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &id
+        ) == noErr else {
             return kAudioObjectUnknown
         }
         return id
@@ -117,11 +148,30 @@ final class AudioDeviceManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr, size > 0 else { return [] }
 
-        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        let count = Int(size) / MemoryLayout<AudioObjectID>.stride
+        guard count > 0 else { return [] }
+
         var ids = Array(repeating: AudioObjectID(kAudioObjectUnknown), count: count)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
+        let status = ids.withUnsafeMutableBytes { buffer -> OSStatus in
+            guard let baseAddress = buffer.baseAddress else { return kAudioHardwareUnspecifiedError }
+            return AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                &size,
+                baseAddress
+            )
+        }
+        guard status == noErr else { return [] }
 
         return ids.compactMap { id in
             guard hasOutputStreams(id), let name = deviceName(id) else { return nil }
@@ -145,9 +195,12 @@ final class AudioDeviceManager: ObservableObject {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var name: CFString?
-        var size = UInt32(MemoryLayout<CFString?>.size)
-        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &name) == noErr, let name else { return nil }
-        return name as String
+        var unmanagedName: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &unmanagedName) { pointer in
+            AudioObjectGetPropertyData(id, &address, 0, nil, &size, pointer)
+        }
+        guard status == noErr, let unmanagedName else { return nil }
+        return unmanagedName.takeUnretainedValue() as String
     }
 }
