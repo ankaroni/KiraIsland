@@ -10,6 +10,7 @@ struct KiraIslandApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var islandController: IslandWindowController?
 
@@ -21,5 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
 
         print("✅ Kira Island started")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        islandController?.close()
+        islandController = nil
     }
 }
