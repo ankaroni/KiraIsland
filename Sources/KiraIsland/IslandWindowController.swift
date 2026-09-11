@@ -4,8 +4,11 @@ import QuartzCore
 
 @MainActor
 final class IslandWindowController {
-    private let compactSize = NSSize(width: 250, height: 42)
-    private let expandedSize = NSSize(width: 500, height: 360)
+    // The panel starts at the physical top edge of the display and grows down.
+    // This makes the black island visually merge with the MacBook camera notch
+    // instead of floating below the menu bar.
+    private let compactSize = NSSize(width: 260, height: 52)
+    private let expandedSize = NSSize(width: 500, height: 380)
 
     private let state = IslandState()
     private let model = AppModel()
@@ -46,6 +49,9 @@ final class IslandWindowController {
     }
 
     private func notchCenterX(on screen: NSScreen) -> CGFloat {
+        // On a notched display macOS exposes the two usable menu-bar regions.
+        // Their gap is the physical camera housing. Use its midpoint when
+        // available; otherwise the display midpoint is the correct fallback.
         if let left = screen.auxiliaryTopLeftArea,
            let right = screen.auxiliaryTopRightArea,
            left.width > 0,
@@ -61,13 +67,10 @@ final class IslandWindowController {
         let centerX = notchCenterX(on: screen)
         let x = centerX - size.width / 2
 
-        // safeAreaInsets.top marks the bottom edge of the physical notch/menu-bar
-        // exclusion zone. Move the panel slightly upward into that zone so the
-        // black island visually joins the camera housing, while most controls
-        // remain below the physical notch instead of being covered by it.
-        let notchBottomY = screen.frame.maxY - screen.safeAreaInsets.top
-        let overlap = min(CGFloat(12), max(CGFloat(6), screen.safeAreaInsets.top * 0.30))
-        let y = notchBottomY - size.height + overlap
+        // Critical geometry rule: the panel's TOP edge is always the physical
+        // top edge of the display. Resizing therefore happens only downward.
+        // safeAreaInsets.top is intentionally NOT subtracted here.
+        let y = screen.frame.maxY - size.height
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
@@ -106,7 +109,7 @@ final class IslandPanel: NSPanel {
         )
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isMovable = false
