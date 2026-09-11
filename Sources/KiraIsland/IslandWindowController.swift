@@ -20,7 +20,6 @@ final class IslandWindowController {
         }
 
         model.start()
-
         let frame = frame(for: compactSize, on: screen)
         let panel = IslandPanel(contentRect: frame)
         panel.contentView = NSHostingView(
@@ -30,10 +29,8 @@ final class IslandWindowController {
                 onToggle: { [weak self] in self?.toggle() }
             )
         )
-
         self.panel = panel
         panel.orderFrontRegardless()
-        print("✅ Island panel created: \(frame)")
     }
 
     func close() {
@@ -49,24 +46,22 @@ final class IslandWindowController {
     }
 
     private func frame(for size: NSSize, on screen: NSScreen) -> NSRect {
-        // Pin directly to the physical top edge. The island grows downward,
-        // keeping its top edge aligned with the MacBook menu bar / notch area.
         let x = screen.frame.midX - size.width / 2
-        let y = screen.frame.maxY - size.height
+        // safeAreaInsets.top is the real camera/notch exclusion height on notched MacBooks.
+        // Put the island immediately BELOW it so no UI is hidden behind the camera housing.
+        let notchBottomY = screen.frame.maxY - screen.safeAreaInsets.top
+        let y = notchBottomY - size.height
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     private func toggle() {
         guard !isAnimating, let panel else { return }
         guard let screen = panel.screen ?? preferredScreen() else { return }
-
         isAnimating = true
         state.isExpanded.toggle()
         if !state.isExpanded { state.selectedTab = .home }
-
         let targetSize = state.isExpanded ? expandedSize : compactSize
         let targetFrame = frame(for: targetSize, on: screen)
-
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.22
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.22, 1.0)
@@ -82,13 +77,7 @@ final class IslandPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     init(contentRect: NSRect) {
-        super.init(
-            contentRect: contentRect,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-
+        super.init(contentRect: contentRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
